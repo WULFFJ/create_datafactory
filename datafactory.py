@@ -1,0 +1,68 @@
+
+# Create an Azure Storage linked service
+    ls_name = 'storageLinkedService001'
+
+    # IMPORTANT: specify the name and key of your Azure Storage account.
+    storage_string = SecureString(value='DefaultEndpointsProtocol=https;AccountName=<account name>;AccountKey=<account key>;EndpointSuffix=<suffix>')
+
+    ls_azure_storage = LinkedServiceResource(properties=AzureStorageLinkedService(connection_string=storage_string)) 
+    ls = adf_client.linked_services.create_or_update(rg_name, df_name, ls_name, ls_azure_storage)
+    print_item(ls)
+
+# Create an Azure blob dataset (input)
+    ds_name = 'ds_in'
+    ds_ls = LinkedServiceReference(reference_name=ls_name)
+    blob_path = '<container>/<folder path>'
+    blob_filename = '<file name>'
+    ds_azure_blob = DatasetResource(properties=AzureBlobDataset(
+        linked_service_name=ds_ls, folder_path=blob_path, file_name=blob_filename)) 
+    ds = adf_client.datasets.create_or_update(
+        rg_name, df_name, ds_name, ds_azure_blob)
+    print_item(ds)
+
+# Create an Azure blob dataset (output)
+    dsOut_name = 'ds_out'
+    output_blobpath = '<container>/<folder path>'
+    dsOut_azure_blob = DatasetResource(properties=AzureBlobDataset(linked_service_name=ds_ls, folder_path=output_blobpath))
+    dsOut = adf_client.datasets.create_or_update(
+        rg_name, df_name, dsOut_name, dsOut_azure_blob)
+    print_item(dsOut)
+
+# Create a copy activity
+    act_name = 'copyBlobtoBlob'
+    blob_source = BlobSource()
+    blob_sink = BlobSink()
+    dsin_ref = DatasetReference(reference_name=ds_name)
+    dsOut_ref = DatasetReference(reference_name=dsOut_name)
+    copy_activity = CopyActivity(name=act_name,inputs=[dsin_ref], outputs=[dsOut_ref], source=blob_source, sink=blob_sink)
+
+    #Create a pipeline with the copy activity
+    
+    #Note1: To pass parameters to the pipeline, add them to the json string params_for_pipeline shown below in the format { “ParameterName1” : “ParameterValue1” } for each of the parameters needed in the pipeline.
+    #Note2: To pass parameters to a dataflow, create a pipeline parameter to hold the parameter name/value, and then consume the pipeline parameter in the dataflow parameter in the format @pipeline().parameters.parametername.
+    
+    p_name = 'copyPipeline'
+    params_for_pipeline = {}
+
+    p_name = 'copyPipeline'
+    params_for_pipeline = {}
+    p_obj = PipelineResource(activities=[copy_activity], parameters=params_for_pipeline)
+    p = adf_client.pipelines.create_or_update(rg_name, df_name, p_name, p_obj)
+    print_item(p)
+
+# Create a pipeline run
+    run_response = adf_client.pipelines.create_run(rg_name, df_name, p_name, parameters={})
+
+# Monitor the pipeline run
+    time.sleep(30)
+    pipeline_run = adf_client.pipeline_runs.get(
+        rg_name, df_name, run_response.run_id)
+    print("\n\tPipeline run status: {}".format(pipeline_run.status))
+    filter_params = RunFilterParameters(
+        last_updated_after=datetime.now() - timedelta(1), last_updated_before=datetime.now() + timedelta(1))
+    query_response = adf_client.activity_runs.query_by_pipeline_run(
+        rg_name, df_name, pipeline_run.run_id, filter_params)
+    print_activity_run_details(query_response.value[0])
+
+# Start the main method
+main()
